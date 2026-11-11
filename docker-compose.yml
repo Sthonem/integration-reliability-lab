@@ -1,0 +1,139 @@
+# Integration Reliability Lab — full stack on one machine.
+#
+#   python -m irlab.devtools init-env        # .env with fresh secrets (once)
+#   docker compose up -d --build
+#   open http://127.0.0.1:8100/dashboard
+#
+# Every port is bound to 127.0.0.1 only. Project name "irlab" keeps containers,
+# networks and volumes separate from any other Compose project on the machine.
+name: irlab
+
+x-hub-env: &hub-env
+  DATABASE_URL: postgresql+asyncpg://irlab:${POSTGRES_PASSWORD:?run python -m irlab.devtools init-env first}@postgres:5432/irlab
+  REDIS_URL: redis://redis:6379/0
+  DB_AUTO_CREATE: "false"   # schema comes from Alembic (the migrate service)
+  MOUNT_MOCKS: "false"      # providers are their own containers
+  POS_API_URL: http://pos:8000
+  PAYMENTS_API_URL: http://payments:8000
+  LOYALTY_API_URL: http://loyalty:8000
+  LOG_FORMAT: json
+  # Lab tuning: short waits so failure scenarios play out in seconds (docs/docker.md).
+  # LAB_* names on purpose: .env's production-like values must not leak in through interpolation.
+  PARK_TIMEOUT_S: ${LAB_PARK_TIMEOUT_S:-5}
+  OUTBOUND_TIMEOUT_S: ${LAB_OUTBOUND_TIMEOUT_S:-1}
+  RETRY_BASE_S: ${LAB_RETRY_BASE_S:-0.2}
+  RETRY_CAP_S: ${LAB_RETRY_CAP_S:-5}
+  RECONCILE_GRACE_S: ${LAB_RECONCILE_GRACE_S:-2}
+  RECONCILE_INTERVAL_S: ${LAB_RECONCILE_INTERVAL_S:-60}
+
+x-app: &app
+  image: irlab:local
+  build:
+    context: .
+    target: runtime
+  env_file: .env
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: irlab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run python -m irlab.devtools init-env first}
+      POSTGRES_DB: irlab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:8154:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U irlab -d irlab"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["127.0.0.1:8163:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    environment: *hub-env
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  pos:
+    <<: *app
+    command: ["uvicorn", "irlab.mocks.serve:pos_app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MOCK_POS_WEBHOOK_URL: http://hub:8000/webhooks/pos
+    ports: ["127.0.0.1:8101:8000"]
+
+  payments:
+    <<: *app
+    command: ["uvicorn", "irlab.mocks.serve:payments_app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MOCK_PAYMENTS_WEBHOOK_URL: http://hub:8000/webhooks/payments
+    ports: ["127.0.0.1:8102:8000"]
+
+  loyalty:
+    <<: *app
+    command: ["uvicorn", "irlab.mocks.serve:loyalty_app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MOCK_LOYALTY_WEBHOOK_URL: http://hub:8000/webhooks/loyalty
+    ports: ["127.0.0.1:8103:8000"]
+
+  hub:
+    <<: *app
+    environment:
+      <<: *hub-env
+      RUN_WORKER: "false"   # the worker service does that
+    ports: ["127.0.0.1:8100:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+      pos: {condition: service_healthy}
+      payments: {condition: service_healthy}
+      loyalty: {condition: service_healthy}
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "irlab.worker"]
+    environment: *hub-env
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      pos: {condition: service_healthy}
+      payments: {condition: service_healthy}
+      loyalty: {condition: service_healthy}
+
+  # Test suite against this Postgres (database irlab_test) and Redis (db 15):
+  #   docker compose --profile test run --rm tests
+  tests:
+    image: irlab:test
+    build:
+      context: .
+      target: test
+    profiles: ["test"]
+    env_file: .env
+    environment:
+      TEST_DATABASE_URL: postgresql+asyncpg://irlab:${POSTGRES_PASSWORD:?run python -m irlab.devtools init-env first}@postgres:5432/irlab_test
+      TEST_REDIS_URL: redis://redis:6379/15
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+volumes:
+  pgdata:
