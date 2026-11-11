@@ -1,5 +1,7 @@
 # Integration Reliability Lab
 
+[![ci](https://github.com/Sthonem/integration-reliability-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Sthonem/integration-reliability-lab/actions/workflows/ci.yml)
+
 An ordering hub that integrates a **POS**, a **payment provider** and a
 **loyalty platform**, built the way a Forward Deployed Engineer has to build
 integrations at a customer site: assume every webhook can arrive twice, late,

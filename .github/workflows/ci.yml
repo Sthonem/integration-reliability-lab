@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: tests (SQLite, in-memory stores, no keys)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev,ai]"
+      - run: pytest -q
+
+  postgres-redis:
+    name: tests (PostgreSQL 16 + Redis 7)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: irlab
+          POSTGRES_DB: irlab_test
+          POSTGRES_HOST_AUTH_METHOD: trust # throwaway CI database, no secret to keep
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U irlab -d irlab_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://irlab@localhost:5432/irlab_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev,ai]"
+      - run: pytest -q
+
+  scenarios:
+    name: six failure scenarios (in-process)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e .
+      - name: Every injected failure must be contained
+        run: python -m irlab.scenarios --orders 20 --json scenarios.json --markdown scenarios.md
+      - name: Upload scenario report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-report
+          path: |
+            scenarios.json
+            scenarios.md
