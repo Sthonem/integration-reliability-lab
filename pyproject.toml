@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "integration-reliability-lab"
-version = "0.1.0"
-description = "Mock POS, payments and loyalty integrations with the reliability patterns a Forward Deployed Engineer ships: signed webhooks, idempotency, retries, outbox, DLQ, reconciliation"
+version = "1.0.0"
+description = "Mock POS, payments and loyalty integrations with signed webhooks, idempotency, retries, outbox, DLQ and reconciliation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

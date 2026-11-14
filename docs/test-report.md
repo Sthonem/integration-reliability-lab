@@ -88,6 +88,11 @@ with 50 orders. All six passed in both environments:
 The raw JSON is next to each report. The README's Measured Results table is
 taken from these two files.
 
+CI runs the same six scenarios in-process with 20 orders each (`--orders 20` in
+`.github/workflows/ci.yml`). The scenario figures in the README's Measured Results
+table, such as 0 double credits out of 50, come from the local 50-order runs
+above, not from CI.
+
 ## Other checks
 
 - **Live stack.** On Compose, a POS order was sent through the payment provider

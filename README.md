@@ -3,12 +3,18 @@
 [![ci](https://github.com/Sthonem/integration-reliability-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/Sthonem/integration-reliability-lab/actions/workflows/ci.yml)
 
 An ordering hub that integrates a **POS**, a **payment provider** and a
-**loyalty platform**, built the way a Forward Deployed Engineer has to build
-integrations at a customer site: assume every webhook can arrive twice, late,
-out of order or forged, every outbound call can time out, and every pair of
-systems will eventually disagree. Then make each of those failures detectable,
+**loyalty platform**. It assumes that every webhook can arrive twice, late,
+out of order or forged, that every outbound call can time out, and that any two
+systems will eventually disagree. It makes each of those failures detectable,
 safe to retry and explainable. **All data is synthetic, all external systems are
 mocks, and no secret is hardcoded.**
+
+![Hub dashboard after injected failure scenarios: 60 orders, 0 open dead letters, and 10 open mismatches flagged by reconciliation (6 partial_payment, 2 overpayment, 2 duplicate_accrual)](docs/img/dashboard.jpg)
+
+The open mismatches are injected on purpose by the scenario runner:
+`partial_payment` by the partial-payment scenario, `overpayment` and
+`duplicate_accrual` by the data-mismatch scenario, which pays an order twice and
+posts a second accrual to the mock loyalty provider itself.
 
 > Status: **all 5 milestones complete** ([roadmap](docs/ROADMAP.md)).
 > 303 tests pass on SQLite and on PostgreSQL 16 + Redis 7. The six failure
